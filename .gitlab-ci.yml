@@ -1,0 +1,55 @@
+image: docker:latest
+
+services:
+  - docker:dind
+
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  DOCKER_DRIVER: overlay2
+  CONTAINER_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
+
+before_script:
+  - docker login -u deploy-token-to-registry -p $CI_TOKEN registry.gitlab.com
+
+build:
+  stage: build
+  script:
+    - docker build -t $CONTAINER_IMAGE .
+    - docker push $CONTAINER_IMAGE
+
+test:
+  stage: test
+  script:
+    - docker run --rm $CONTAINER_IMAGE php artisan test
+
+deploy:
+  stage: deploy
+  tags: [lararun]
+  script:
+    - echo "Deploying to production..."
+    - docker login -u deploy-token-to-registry -p $CI_TOKEN registry.gitlab.com
+    - docker service rm swarm_lara_cluster  
+    - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+#    - docker stop postimg-api || true
+#    - docker run -d --name postimg-api -p 8005:8005 $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+    - docker service create --name swarm_lara_cluster --replicas=3 -p 8005:8005 $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+    - docker image prune -a --force
+  only:
+    - main
+
+# deploy:
+#   stage: deploy
+#   tags: [lararun]
+#   script:
+#     - echo "Deploying to production..."
+#     - docker login -u $CI_REGISTRY_USER -p $CI_JOB_TOKEN $CI_REGISTRY
+#     - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+#     - docker stop postimg-api || true  # Stop the existing container if it's running
+#     - docker rm postimg-api || true  # Remove the existing container if it exists
+#     - docker run -d --name postimg-api -p 8000:8000 $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+#   only:
+#     - main
